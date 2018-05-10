@@ -14,12 +14,36 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <err.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+void
+handler(int sig, siginfo_t *sip, void *ctx)
+{
+	printf("signo %d, code %d, errno %d\n",
+	    sip->si_signo, sip->si_code, sip->si_errno);
+	if (sig != SIGILL)
+		errx(1, "expected SIGILL: %d", sig);
+	printf("addr %p, trapno %d\n", sip->si_addr, sip->si_trapno);
+	printf("instruction %.2x %.2x %.2x %.2x\n",
+	    ((uint8_t *)sip->si_addr)[0],
+	    ((uint8_t *)sip->si_addr)[1],
+	    ((uint8_t *)sip->si_addr)[2],
+	    ((uint8_t *)sip->si_addr)[3]);
+	if (*((uint32_t *)sip->si_addr) != 0xc8c70ff0)
+		errx(1, "expected instrcution f0 0f c7 c8");
+
+	exit(0);
+}
 
 int
 main(int argc, char *argv[])
 {
+	struct sigaction sa;
 	uint64_t mem;
 	uint32_t eax, ebx, ecx, edx;
 
@@ -38,18 +62,12 @@ main(int argc, char *argv[])
 	printf("mem %.16llx, edx:eax %.8x%8x, ecx:ebx %.8x%.8x\n",
 	    mem, edx, eax, ecx, ebx);
 
-	if (mem != 0x0123456789abcdefLL) {
-		printf("expected mem 0x0123456789abcdef\n");
-		return 1;
-	}
-	if (edx != 0x01234567 || eax != 0x89abcdef) {
-		printf("expected edx:eax 0x0123456789abcdef\n");
-		return 1;
-	}
-	if (ecx != 0x33333333 || ebx != 0x22222222) {
-		printf("expected ecx:ebx 0x3333333322222222\n");
-		return 1;
-	}
+	if (mem != 0x0123456789abcdefLL)
+		errx(1, "expected mem 0x0123456789abcdef");
+	if (edx != 0x01234567 || eax != 0x89abcdef)
+		errx(1, "expected edx:eax 0x0123456789abcdef");
+	if (ecx != 0x33333333 || ebx != 0x22222222)
+		errx(1, "expected ecx:ebx 0x3333333322222222");
 
 	printf("cmpxchg8b mem, mem == edx:eax\n");
 	asm volatile (
@@ -58,18 +76,25 @@ main(int argc, char *argv[])
 	printf("mem %.16llx, edx:eax %.8x%8x, ecx:ebx %.8x%.8x\n",
 	    mem, edx, eax, ecx, ebx);
 
-	if (mem != 0x3333333322222222LL) {
-		printf("expected mem 0x3333333322222222\n");
-		return 1;
-	}
-	if (edx != 0x01234567 || eax != 0x89abcdef) {
-		printf("expected edx:eax 0x0123456789abcdef\n");
-		return 1;
-	}
-	if (ecx != 0x33333333 || ebx != 0x22222222) {
-		printf("expected ecx:ebx 0x3333333322222222\n");
-		return 1;
-	}
+	if (mem != 0x3333333322222222LL)
+		errx(1, "expected mem 0x3333333322222222");
+	if (edx != 0x01234567 || eax != 0x89abcdef)
+		errx(1, "expected edx:eax 0x0123456789abcdef");
+	if (ecx != 0x33333333 || ebx != 0x22222222)
+		errx(1, "expected ecx:ebx 0x3333333322222222");
+
+	memset(&sa, 0 ,sizeof(sa));
+	sa.sa_sigaction = handler;
+	sa.sa_flags = SA_SIGINFO;
+	if (sigaction(SIGILL, &sa, NULL) == -1)
+		err(2, "sigaction");
+
+	printf("cmpxchg8b eax\n");
+	asm volatile (
+		".byte 0xF0,0x0F,0xC7,0xC8"
+		: : : "%eax", "%ebx", "%ecx", "%edx");
+	printf("mem %.16llx, edx:eax %.8x%8x, ecx:ebx %.8x%.8x\n",
+	    mem, edx, eax, ecx, ebx);
 
 	return 0;
 }
