@@ -96,5 +96,5 @@ main(int argc, char *argv[])
 	printf("mem %.16llx, edx:eax %.8x%8x, ecx:ebx %.8x%.8x\n",
 	    mem, edx, eax, ecx, ebx);
 
-	return 0;
+	errx(1, "expected signal");
 }
