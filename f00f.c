@@ -1,5 +1,5 @@
 /*
- * Copyright (c) Alexander Bluhm <bluhm@genua.de>
+ * Copyright (c) 2018 Alexander Bluhm <bluhm@genua.de>
  *
  * Permission to use, copy, modify, and distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -13,6 +13,8 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
+
+/* Test the Pentium f00f bug workaround by executing 0xF0,0x0F,0xC7,0xC8. */
 
 #include <err.h>
 #include <signal.h>
@@ -53,6 +55,7 @@ main(int argc, char *argv[])
 	ecx = 0x33333333;
 	edx = 0x44444444;
 
+	/* First check that the cmpxchg8b instruction works as expected. */
 	printf("mem %.16llx, edx:eax %.8x%8x, ecx:ebx %.8x%.8x\n",
 	    mem, edx, eax, ecx, ebx);
 	printf("cmpxchg8b mem, mem != edx:eax\n");
@@ -83,12 +86,14 @@ main(int argc, char *argv[])
 	if (ecx != 0x33333333 || ebx != 0x22222222)
 		errx(1, "expected ecx:ebx 0x3333333322222222");
 
+	/* An illegal instruction must be signalled to user land. */
 	memset(&sa, 0 ,sizeof(sa));
 	sa.sa_sigaction = handler;
 	sa.sa_flags = SA_SIGINFO;
 	if (sigaction(SIGILL, &sa, NULL) == -1)
 		err(2, "sigaction");
 
+	/* Execute the cmpxchg8b instruction with invalid addressing mode. */
 	printf("cmpxchg8b eax\n");
 	asm volatile (
 		".byte 0xF0,0x0F,0xC7,0xC8"
@@ -96,5 +101,6 @@ main(int argc, char *argv[])
 	printf("mem %.16llx, edx:eax %.8x%8x, ecx:ebx %.8x%.8x\n",
 	    mem, edx, eax, ecx, ebx);
 
+	/* Not reached, the processor hangs or the signal handler exits. */
 	errx(1, "expected signal");
 }
